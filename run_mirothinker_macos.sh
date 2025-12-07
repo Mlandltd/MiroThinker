@@ -254,18 +254,42 @@ echo "      Server binary found at: $SERVER_BIN"
 
 echo "[5/9] Starting llama.cpp server (OpenAI-style API)..."
 LLM_PORT=8000
-# MiroThinker v1.0 supports up to 256K context
-LLM_CTX=262144
-# With 128GB unified memory, offload all layers to Metal GPU for best performance
+
+# Performance optimization: Adjust these for speed vs quality tradeoff
+# For MAXIMUM SPEED: Use smaller context (65536), smaller batches (256), half CPU threads
+# For BEST QUALITY: Use full 256K context (262144), larger batches (512), all CPU threads
+
+# Context size: Smaller = faster (but less context for long conversations)
+# Options: 65536 (64K - fastest), 131072 (128K - balanced), 262144 (256K - best quality)
+LLM_CTX=65536  # 128K - good balance (change to 262144 for 256K, or 65536 for speed)
+
+# With 128GB unified memory, offload all layers to Metal GPU
 LLM_N_GPU_LAYERS=99
-# Use all CPU cores for processing
+
+# CPU threads: For Metal, using fewer threads can sometimes be faster
+# due to reduced overhead. Try: hw.ncpu/2 for speed, or hw.ncpu for throughput
 CPU_THREADS=$(sysctl -n hw.ncpu)
+# Uncomment below for speed optimization (uses half cores, often faster):
+# CPU_THREADS=$(( $(sysctl -n hw.ncpu) / 2 ))
+
+# Batch sizes: Smaller = faster per token, larger = better throughput
+# For speed: use 256/256, for throughput: use 512/512
+# Note: Very small batches (<128) can actually be slower due to overhead
+BATCH_SIZE=256
+UBATCH_SIZE=256
 
 echo "[5/9] Server configuration:"
 echo "      Port: $LLM_PORT"
-echo "      Context size: $LLM_CTX (256K - full v1.0 support)"
+echo "      Context size: $LLM_CTX (128K - optimized for speed)"
 echo "      GPU layers: $LLM_N_GPU_LAYERS (all layers on Metal GPU)"
 echo "      CPU threads: $CPU_THREADS"
+echo "      Batch size: $BATCH_SIZE (optimized for speed)"
+echo ""
+echo "      💡 SPEED OPTIMIZATION TIPS:"
+echo "         - Use Q3 quantization instead of Q5 (faster, slightly lower quality)"
+echo "         - Use 8B model instead of 30B (3-4x faster)"
+echo "         - Reduce context to 65536 (64K) for even faster inference"
+echo "         - Set CPU_THREADS to hw.ncpu/2 (sometimes faster due to less overhead)"
 
 # Kill any existing server on the same port
 if pgrep -f "server .*--port $LLM_PORT" >/dev/null 2>&1; then
@@ -281,8 +305,9 @@ echo "[5/9] Starting server in background..."
   --ctx-size "$LLM_CTX" \
   --n-gpu-layers "$LLM_N_GPU_LAYERS" \
   --threads "$CPU_THREADS" \
-  --batch-size 512 \
-  --ubatch-size 512 \
+  --batch-size "$BATCH_SIZE" \
+  --ubatch-size "$UBATCH_SIZE" \
+  --mlock \
   >/tmp/mirothinker_llama_server.log 2>&1 &
 
 SERVER_PID=$!

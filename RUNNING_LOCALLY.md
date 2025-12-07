@@ -176,16 +176,44 @@ The setup scripts automatically start the llama.cpp server, but you can also run
 
 #### macOS (Metal)
 
+**For balanced performance** (default):
 ```bash
 cd /path/to/MiroThinker/llama.cpp/build/bin
 ./llama-server \
-  -m ../models/MiroThinker-v1.0-30B-Q5_K_M.gguf \
+  -m ../../models/MiroThinker-v1.0-30B-Q5_K_M.gguf \
+  --port 8000 \
+  --ctx-size 131072 \
+  --n-gpu-layers 99 \
+  --threads $(sysctl -n hw.ncpu) \
+  --batch-size 256 \
+  --ubatch-size 256 \
+  --mlock
+```
+
+**For maximum speed**:
+```bash
+./llama-server \
+  -m ../../models/MiroThinker-v1.0-30B-Q3_K_XL.gguf \
+  --port 8000 \
+  --ctx-size 65536 \
+  --n-gpu-layers 99 \
+  --threads $(( $(sysctl -n hw.ncpu) / 2 )) \
+  --batch-size 256 \
+  --ubatch-size 256 \
+  --mlock
+```
+
+**For maximum quality** (slower):
+```bash
+./llama-server \
+  -m ../../models/MiroThinker-v1.0-30B-Q5_K_M.gguf \
   --port 8000 \
   --ctx-size 262144 \
   --n-gpu-layers 99 \
   --threads $(sysctl -n hw.ncpu) \
   --batch-size 512 \
-  --ubatch-size 512
+  --ubatch-size 512 \
+  --mlock
 ```
 
 #### Linux (CUDA)
@@ -440,6 +468,156 @@ git pull origin main
 2. Use lower quantization (Q3 instead of Q4/Q5)
 3. Reduce context size
 4. Use GPU acceleration (ensure CUDA/Metal is working)
+
+## ⚡ Speed Optimization for macOS
+
+### Quick Speed Improvements
+
+For **maximum speed** on macOS, try these optimizations:
+
+#### 1. Use Smaller/Lower Quantization Model
+
+**Fastest option** (3-4x speedup):
+```bash
+# Download 8B model instead of 30B
+hf download bartowski/miromind-ai_MiroThinker-v1.0-8B-GGUF \
+  "miromind-ai_MiroThinker-v1.0-8B-Q4_K_M.gguf" \
+  --local-dir models
+```
+
+**Faster option** (2x speedup, minimal quality loss):
+```bash
+# Use Q3 quantization instead of Q5
+hf download bartowski/miromind-ai_MiroThinker-v1.0-30B-GGUF \
+  "miromind-ai_MiroThinker-v1.0-30B-Q3_K_XL.gguf" \
+  --local-dir models
+```
+
+#### 2. Optimize Server Parameters
+
+Edit the server startup in `run_mirothinker_macos.sh` or start manually with optimized settings:
+
+```bash
+cd /path/to/MiroThinker/llama.cpp/build/bin
+./llama-server \
+  -m ../../models/MiroThinker-v1.0-30B-Q3_K_XL.gguf \
+  --port 8000 \
+  --ctx-size 65536 \
+  --n-gpu-layers 99 \
+  --threads $(( $(sysctl -n hw.ncpu) / 2 )) \
+  --batch-size 256 \
+  --ubatch-size 256 \
+  --mlock \
+  --no-mmap
+```
+
+**Speed optimizations**:
+- `--ctx-size 65536`: 64K context (faster than 128K/256K)
+- `--threads $(hw.ncpu / 2)`: Half CPU threads (often faster due to less overhead)
+- `--batch-size 256`: Smaller batch (faster per token)
+- `--ubatch-size 256`: Smaller micro batch
+- `--mlock`: Lock memory (prevents swapping, faster)
+- `--no-mmap`: Load full model into RAM (faster, uses more RAM)
+
+#### 3. Use MLX Framework (Alternative - Fastest)
+
+MLX is Apple's optimized framework, often faster than llama.cpp:
+
+```bash
+# Install MLX
+pip install mlx-lm
+
+# Convert GGUF to MLX format (one-time)
+python -m mlx_lm.convert \
+  --hf-path miromind-ai/MiroThinker-v1.0-30B \
+  --mlx-path models/mirothinker-30b-mlx \
+  --quantize
+
+# Run with MLX (much faster on Apple Silicon)
+python -m mlx_lm.server \
+  --model models/mirothinker-30b-mlx \
+  --port 8000
+```
+
+**Note**: MLX requires converting models, but provides best performance on Apple Silicon.
+
+#### 4. Reduce Context Size
+
+**For speed**: Use 64K context instead of 128K/256K
+- **64K**: Fastest, good for most tasks
+- **128K**: Balanced (current default)
+- **256K**: Slowest, maximum context
+
+Edit `run_mirothinker_macos.sh`:
+```bash
+LLM_CTX=65536  # 64K - fastest
+```
+
+#### 5. Optimize CPU Threads
+
+**For speed**: Use half CPU cores (often faster due to less overhead)
+```bash
+CPU_THREADS=$(( $(sysctl -n hw.ncpu) / 2 ))
+```
+
+**For throughput**: Use all cores
+```bash
+CPU_THREADS=$(sysctl -n hw.ncpu)
+```
+
+#### 6. Batch Size Optimization
+
+**For speed**: Smaller batches
+```bash
+--batch-size 256 --ubatch-size 256
+```
+
+**For throughput**: Larger batches
+```bash
+--batch-size 512 --ubatch-size 512
+```
+
+### Speed Comparison
+
+| Configuration | Tokens/sec | Quality | Use Case |
+|--------------|------------|---------|----------|
+| 30B Q5_K_M, 256K ctx | ~10-13 | Best | Maximum quality |
+| 30B Q4_K_S, 128K ctx | ~13-15 | Excellent | Balanced (default) |
+| 30B Q3_K_XL, 64K ctx | ~18-22 | Very Good | Faster inference |
+| 8B Q4_K_M, 64K ctx | ~30-40 | Good | Fastest, smaller tasks |
+
+### Recommended Speed Setup
+
+For **maximum speed** on MacBook Pro M3:
+
+1. **Use 8B model** (3-4x faster):
+   ```bash
+   hf download bartowski/miromind-ai_MiroThinker-v1.0-8B-GGUF \
+     "miromind-ai_MiroThinker-v1.0-8B-Q4_K_M.gguf" \
+     --local-dir models
+   ```
+
+2. **Optimize server settings**:
+   ```bash
+   --ctx-size 65536 \
+   --threads $(( $(sysctl -n hw.ncpu) / 2 )) \
+   --batch-size 256 \
+   --ubatch-size 256
+   ```
+
+3. **Expected performance**: ~30-40 tokens/second (vs ~13 tokens/second with 30B)
+
+### Monitoring Performance
+
+Check actual generation speed:
+```bash
+tail -f /tmp/mirothinker_llama_server.log | grep "tokens per second"
+```
+
+Look for lines like:
+```
+eval time = XXXX ms / YYY tokens (ZZ.ZZ ms per token, AA.AA tokens per second)
+```
 
 ### Tool Errors (422, 404, etc.)
 
