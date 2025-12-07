@@ -210,10 +210,38 @@ __marimo__/
 # -- ADDED --
 # Log files
 logs/
+*.log
 
 # Data directory - exclude everything except README
 data/
 
+# Environment files and backups
+.env
+.env.*
+.env.backup
+*.env.backup
+
+# Model files and directories
+models/
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# Cloned repositories
+llama.cpp/
+
+# Virtual environments
+mirothinker_env/
+.venv/
+venv/
+env/
+
+# Temporary files
+*.backup
+*.tmp
+*.temp
 
 .idea/
 

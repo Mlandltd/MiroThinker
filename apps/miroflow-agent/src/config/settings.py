@@ -332,6 +332,9 @@ def create_mcp_server_parameters(cfg: DictConfig, agent_cfg: DictConfig):
 def expose_sub_agents_as_tools(sub_agents_cfg: DictConfig):
     """Expose sub-agents as tools"""
     sub_agents_server_params = []
+    # Handle case where sub_agents is None (e.g., single_agent_keep5 config)
+    if sub_agents_cfg is None:
+        return sub_agents_server_params
     for sub_agent in sub_agents_cfg.keys():
         if "agent-browsing" in sub_agent:
             sub_agents_server_params.append(
